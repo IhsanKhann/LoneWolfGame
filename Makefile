@@ -1,26 +1,19 @@
 # ========================
-# Compiler and flags
+# Compiler
 # ========================
 CXX = g++
+
 CXXFLAGS = -std=c++17 -Wall -Wextra \
 	-Iinclude \
 	-Iimgui \
-	-I$(GLFW_INCLUDE)
+	-Iimgui/backends \
+	-ID:/glfw-3.4/glfw-3.4/include
 
 # ========================
-# Detect platform for linker
+# GLFW (Windows MinGW)
 # ========================
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Linux)
-	LDFLAGS = -lglfw -lGL -ldl -lpthread
-	GLFW_INCLUDE = /usr/include
-	GLFW_LIB = /usr/lib
-else ifeq ($(OS),Windows_NT)
-	# Windows (MinGW)
-	LDFLAGS = -L$(GLFW_LIB) -lglfw3 -lopengl32 -lgdi32
-	GLFW_INCLUDE = glfw/include
-	GLFW_LIB = glfw/lib-mingw-w64
-endif
+GLFW_LIB_DIR = D:/glfw-3.4/glfw-3.4/build/src
+LDFLAGS = -L$(GLFW_LIB_DIR) -lglfw3 -lopengl32 -lgdi32
 
 # ========================
 # Directories
@@ -29,72 +22,74 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 IMGUI_DIR = imgui
+IMGUI_BACKENDS = imgui/backends
 
 # ========================
-# Target executable
+# Target
 # ========================
-TARGET = $(BIN_DIR)/wolf_game
-
-ifeq ($(OS),Windows_NT)
-	TARGET := $(TARGET).exe
-endif
+TARGET = $(BIN_DIR)/wolf_game.exe
 
 # ========================
 # Source files
 # ========================
-SRC_CPP   = $(wildcard $(SRC_DIR)/*.cpp)
+SRC_CPP = $(wildcard $(SRC_DIR)/*.cpp)
+
 IMGUI_CPP = \
-	$(IMGUI_DIR)/imgui.cpp \
-	$(IMGUI_DIR)/imgui_draw.cpp \
-	$(IMGUI_DIR)/imgui_tables.cpp \
-	$(IMGUI_DIR)/imgui_widgets.cpp \
-	$(IMGUI_DIR)/imgui_demo.cpp \
-	$(IMGUI_DIR)/imgui_impl_glfw.cpp \
-	$(IMGUI_DIR)/imgui_impl_opengl3.cpp
+	imgui/imgui.cpp \
+	imgui/imgui_draw.cpp \
+	imgui/imgui_demo.cpp \
+	imgui/imgui_widgets.cpp \
+	imgui/imgui_tables.cpp
+
+IMGUI_BACKEND_CPP = \
+	imgui/backends/imgui_impl_glfw.cpp \
+	imgui/backends/imgui_impl_opengl3.cpp
 
 # ========================
 # Object files
 # ========================
-SRC_OBJ   = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_CPP))
-IMGUI_OBJ = $(patsubst $(IMGUI_DIR)/%.cpp,$(OBJ_DIR)/imgui_%.o,$(IMGUI_CPP))
-OBJECTS   = $(SRC_OBJ) $(IMGUI_OBJ)
+SRC_OBJ = $(patsubst src/%.cpp,obj/%.o,$(SRC_CPP))
+IMGUI_OBJ = $(patsubst imgui/%.cpp,obj/imgui_%.o,$(IMGUI_CPP))
+IMGUI_BACKEND_OBJ = $(patsubst imgui/backends/%.cpp,obj/imgui_backends/%.o,$(IMGUI_BACKEND_CPP))
+
+OBJECTS = $(SRC_OBJ) $(IMGUI_OBJ) $(IMGUI_BACKEND_OBJ)
 
 # ========================
 # Default target
 # ========================
-all: $(TARGET)
+all: dirs $(TARGET)
 
 # ========================
-# Link executable
+# Link
 # ========================
-$(TARGET): $(OBJECTS) | $(BIN_DIR)
+$(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
 # ========================
-# Compile project sources
+# Compile rules
 # ========================
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+obj/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# ========================
-# Compile ImGui sources
-# ========================
-$(OBJ_DIR)/imgui_%.o: $(IMGUI_DIR)/%.cpp | $(OBJ_DIR)
+obj/imgui_%.o: imgui/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+obj/imgui_backends/%.o: imgui/backends/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # ========================
 # Create directories
 # ========================
-$(BIN_DIR):
-	mkdir -p $(BIN_DIR)
-
-$(OBJ_DIR):
-	mkdir -p $(OBJ_DIR)
+dirs:
+	if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+	if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+	if not exist $(OBJ_DIR)\imgui_backends mkdir $(OBJ_DIR)\imgui_backends
 
 # ========================
-# Clean build
+# Clean
 # ========================
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR)
+	if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
+	if exist $(BIN_DIR) rmdir /s /q $(BIN_DIR)
 
-.PHONY: all clean
+.PHONY: all clean dirs
