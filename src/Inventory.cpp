@@ -1,5 +1,7 @@
 #include "Inventory.h"
 
+// No changes needed - implementation matches report
+
 InventoryNode::InventoryNode(const std::string& n, const std::string& t, int e, int q)
     : name(n), type(t), effect(e), quantity(q), next(nullptr) {}
 

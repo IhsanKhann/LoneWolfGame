@@ -3,6 +3,25 @@
 
 #include <string>
 #include <vector>
+#include "Event.h"
+
+// ============================================================
+// IMPORTANT: Choice struct MUST be defined here, not forward declared!
+// ============================================================
+
+// Choice structure with stat effects (moved from DecisionTree.h)
+struct Choice {
+    std::string text;
+    int targetNodeId;
+    std::vector<StatEffect> effects;
+    
+    Choice(const std::string& t, int target, const std::vector<StatEffect>& eff = {})
+        : text(t), targetNodeId(target), effects(eff) {}
+};
+
+// ============================================================
+// Node class
+// ============================================================
 
 class Node {
 public:
@@ -13,11 +32,17 @@ public:
     bool isEndingNode() const;
     std::string getEndingType() const;
     
-    void addChoice(const std::string& text, int nextNodeId);
+    // Support for Choice struct with effects
+    void addChoice(const std::string& text, int nextNodeId, const std::vector<StatEffect>& effects = {});
     void addTrigger(int eventId);
     void setEndingType(const std::string& type);
     
-    const std::vector<std::pair<std::string, int>>& getChoices() const;
+    // Return Choice structs instead of pairs
+    const std::vector<Choice>& getChoicesWithEffects() const;
+    
+    // Legacy support - returns pairs for backward compatibility
+    std::vector<std::pair<std::string, int>> getChoices() const;
+    
     const std::vector<int>& getTriggers() const;
 
 private:
@@ -25,7 +50,7 @@ private:
     std::string text;
     bool ending;
     std::string endingType;
-    std::vector<std::pair<std::string, int>> choices;
+    std::vector<Choice> choicesWithEffects;  // Uses Choice struct defined above
     std::vector<int> triggers;
 };
 
