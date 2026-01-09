@@ -1,18 +1,18 @@
 #include "../include/UI.h"
 #include <imgui.h>
 #include <iostream>
+#include <GLFW/glfw3.h>   // FIRST
 
 // ============================================================
-// UPDATED: Added complete undo/redo UI controls
-// Added action history display
-// Added visual feedback for all actions
-// Optimized window sizes for better content visibility
+// FULLY RESPONSIVE UI: All panels scale with window size
+// Works in windowed mode and fullscreen
+// Maintains proper proportions at any resolution
 // ============================================================
 
 // UIManager implementation (Ch 7.4)
 namespace UIManager {
 
-// Main render loop (orchestrates all UI elements) - UPDATED with undo controls
+// Main render loop (orchestrates all UI elements)
 void render(GameState& state, DecisionTree& story, std::vector<Event>& eventLog, 
             int& selectedChoice, GameStateStack& history, ActionQueue& actionQueue) {
     displayStatsPanel(state.stats, state.day, state.packSize, "Winter");
@@ -20,38 +20,53 @@ void render(GameState& state, DecisionTree& story, std::vector<Event>& eventLog,
     showInventoryGUI(state.inventory, state.stats);
     displayEventLog(eventLog);
     
-    // NEW: Display action controls with undo/redo functionality
+    // Display action controls with undo/redo functionality
     bool undoRequested = false;
     bool clearHistoryRequested = false;
     displayActionControls(history, actionQueue, undoRequested, clearHistoryRequested);
 }
 
-// Stats panel with progress bars - INCREASED SIZE
-void displayStatsPanel(const Stats& stats, int day, int packSize, const std::string& weather) {
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_Once);  // Increased from 280x350
-    ImGui::Begin("Wolf Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+// Check for ESC key to close window
+void checkEscapeKey(GLFWwindow* window) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 12));  // More spacing
+// Stats panel - LEFT SIDE, RESPONSIVE
+void displayStatsPanel(const Stats& stats, int day, int packSize, const std::string& weather) {
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
     
-    // Header info with larger font
+    // Left column: 25% of window width
+    float leftColWidth = windowWidth * 0.25f;
+    
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(leftColWidth, windowHeight), ImGuiCond_Always);
+    ImGui::Begin("Wolf Status", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 12));
+    
+    // Header info
     ImGui::Text("Day: %d", day);
     ImGui::Text("Pack Size: %d", packSize);
     ImGui::Text("Weather: %s", weather.c_str());
     ImGui::Separator();
     ImGui::Spacing();
     
-    // Progress bars with better sizing and labels
+    // Health bar
     ImGui::Text("Health: %d / 100", stats.getHealth());
     float healthPercent = stats.getHealth() / 100.0f;
     ImVec4 healthColor = healthPercent > 0.5f ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : 
                          (healthPercent > 0.2f ? ImVec4(1.0f, 1.0f, 0.0f, 1.0f) : 
                           ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, healthColor);
-    ImGui::ProgressBar(healthPercent, ImVec2(-1, 25));  // Taller bars
+    ImGui::ProgressBar(healthPercent, ImVec2(-1, 25));
     ImGui::PopStyleColor();
     ImGui::Spacing();
     
+    // Hunger bar
     ImGui::Text("Hunger: %d / 100", stats.getHunger());
     float hungerPercent = (100 - stats.getHunger()) / 100.0f;
     ImVec4 hungerColor = hungerPercent > 0.5f ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : 
@@ -62,6 +77,7 @@ void displayStatsPanel(const Stats& stats, int day, int packSize, const std::str
     ImGui::PopStyleColor();
     ImGui::Spacing();
     
+    // Stamina bar
     ImGui::Text("Stamina: %d / 100", stats.getStamina());
     float staminaPercent = stats.getStamina() / 100.0f;
     ImVec4 staminaColor = staminaPercent > 0.5f ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : 
@@ -72,14 +88,17 @@ void displayStatsPanel(const Stats& stats, int day, int packSize, const std::str
     ImGui::PopStyleColor();
     ImGui::Spacing();
     
+    // Pack Status bar
     ImGui::Text("Pack Status: %d / 100", stats.getPackStatus());
     ImGui::ProgressBar(stats.getPackStatus() / 100.0f, ImVec2(-1, 25));
     ImGui::Spacing();
     
+    // Morale bar
     ImGui::Text("Morale: %d / 100", stats.getMorale());
     ImGui::ProgressBar(stats.getMorale() / 100.0f, ImVec2(-1, 25));
     ImGui::Spacing();
     
+    // Strength bar
     ImGui::Text("Strength: %d / 100", stats.getStrength());
     ImGui::ProgressBar(stats.getStrength() / 100.0f, ImVec2(-1, 25));
     ImGui::Spacing();
@@ -88,8 +107,10 @@ void displayStatsPanel(const Stats& stats, int day, int packSize, const std::str
     ImGui::Text("Experience Points: %d", stats.getXP());
     ImGui::Spacing();
     
-    // Warning messages for critical stats - more visible
+    // Warning messages for critical stats
     ImGui::Separator();
+    ImGui::Text("Status Warnings:");
+    ImGui::Spacing();
     if (stats.getHealth() < 20) {
         ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "⚠ CRITICAL HEALTH!");
     }
@@ -99,23 +120,35 @@ void displayStatsPanel(const Stats& stats, int day, int packSize, const std::str
     if (stats.getStamina() < 20) {
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "⚠ EXHAUSTED!");
     }
+    if (stats.getHealth() >= 20 && stats.getHunger() <= 80 && stats.getStamina() >= 20) {
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No critical warnings");
+    }
 
     ImGui::PopStyleVar();
     ImGui::End();
 }
 
-// Story node panel - INCREASED SIZE for better text wrapping
+// Story node panel - CENTER TOP, RESPONSIVE
 void displayNodeGUI(const Node* node, int& selectedChoice) {
     if (!node) return;
 
-    ImGui::SetNextWindowPos(ImVec2(340, 10), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(750, 500), ImGuiCond_Once);  // Increased from 700x400
-    ImGui::Begin("Wilderness Log", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Center column: 50% of window width
+    float leftColWidth = windowWidth * 0.25f;
+    float centerColWidth = windowWidth * 0.5f;
+    float topHeight = windowHeight * 0.61f;  // 61% for top section
+    
+    ImGui::SetNextWindowPos(ImVec2(leftColWidth, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(centerColWidth, topHeight), ImGuiCond_Always);
+    ImGui::Begin("Wilderness Log", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 10));
     
-    // Story text with better wrapping area
-    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 730);
+    // Story text with proper wrapping
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + centerColWidth - 30);
     ImGui::TextWrapped("%s", node->getText().c_str());
     ImGui::PopTextWrapPos();
     
@@ -123,11 +156,12 @@ void displayNodeGUI(const Node* node, int& selectedChoice) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Choice buttons with better sizing
+    // Choice buttons - dynamically sized
     const auto& choices = node->getChoices();
+    float buttonWidth = centerColWidth - 20;
     for (size_t i = 0; i < choices.size(); ++i) {
         std::string buttonLabel = std::string(1, 'A' + i) + ". " + choices[i].first;
-        if (ImGui::Button(buttonLabel.c_str(), ImVec2(730, 50))) {  // Taller buttons
+        if (ImGui::Button(buttonLabel.c_str(), ImVec2(buttonWidth, 50))) {
             selectedChoice = static_cast<int>(i);
         }
         ImGui::Spacing();
@@ -147,11 +181,20 @@ void displayNodeGUI(const Node* node, int& selectedChoice) {
     ImGui::End();
 }
 
-// Inventory panel - INCREASED SIZE
+// Inventory panel - RIGHT SIDE, RESPONSIVE
 void showInventoryGUI(Inventory* inventory, Stats& stats) {
-    ImGui::SetNextWindowPos(ImVec2(1100, 10), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(300, 420), ImGuiCond_Once);  // Increased from 260x350
-    ImGui::Begin("Inventory", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Right column: 25% of window width
+    float leftColWidth = windowWidth * 0.25f;
+    float centerColWidth = windowWidth * 0.5f;
+    float rightColWidth = windowWidth * 0.25f;
+    
+    ImGui::SetNextWindowPos(ImVec2(leftColWidth + centerColWidth, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rightColWidth, windowHeight), ImGuiCond_Always);
+    ImGui::Begin("Inventory", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 8));
     
@@ -167,7 +210,9 @@ void showInventoryGUI(Inventory* inventory, Stats& stats) {
         ImGui::Spacing();
         ImGui::TextWrapped("Collect items during your journey to survive.");
     } else {
-        ImGui::BeginChild("ItemList", ImVec2(0, 300), true);
+        // Dynamic child region height
+        float childHeight = windowHeight - 120;
+        ImGui::BeginChild("ItemList", ImVec2(0, childHeight), true);
         
         InventoryNode* current = inventory->getHead();
         int itemIndex = 1;
@@ -175,11 +220,12 @@ void showInventoryGUI(Inventory* inventory, Stats& stats) {
             ImGui::PushID(itemIndex);
             
             // Item display with icon
-            std::string itemIcon = (current->type == "FOOD") ? "🍖" : "🌿";
+            std::string itemIcon = (current->type == "FOOD") ? "🖤" : "🌿";
             ImGui::Text("%s %s", itemIcon.c_str(), current->name.c_str());
             
-            // Details on same line
-            ImGui::SameLine(200);
+            // Details on same line (dynamically positioned)
+            float nameWidth = rightColWidth * 0.65f;
+            ImGui::SameLine(nameWidth);
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "x%d", current->quantity);
             
             // Effect info
@@ -199,7 +245,7 @@ void showInventoryGUI(Inventory* inventory, Stats& stats) {
                 }
                 inventory->useItem(current->name, effect, type);
                 ImGui::PopID();
-                break; // Refresh needed after use
+                break;
             }
             
             ImGui::Separator();
@@ -223,7 +269,7 @@ void showInventoryGUI(Inventory* inventory, Stats& stats) {
     ImGui::End();
 }
 
-// Single event window (floating)
+// Single event window (floating) - kept for compatibility
 void displayEventGUI(const std::string& text) {
     ImGui::SetNextWindowSize(ImVec2(600, 80), ImGuiCond_Once);
     ImGui::Begin("Event", nullptr, ImGuiWindowFlags_NoCollapse);
@@ -231,21 +277,34 @@ void displayEventGUI(const std::string& text) {
     ImGui::End();
 }
 
-// Event log - INCREASED SIZE for more events
+// Event log - CENTER BOTTOM, RESPONSIVE
 void displayEventLog(const std::vector<Event>& events) {
-    ImGui::SetNextWindowPos(ImVec2(340, 520), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(750, 250), ImGuiCond_Once);  // Increased from 700x220
-    ImGui::Begin("Event Log", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Center column positioning
+    float leftColWidth = windowWidth * 0.25f;
+    float centerColWidth = windowWidth * 0.5f;
+    float topHeight = windowHeight * 0.61f;
+    float bottomHeight = windowHeight * 0.39f;
+    
+    ImGui::SetNextWindowPos(ImVec2(leftColWidth, topHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(centerColWidth, bottomHeight), ImGuiCond_Always);
+    ImGui::Begin("Event Log", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 6));
     
     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Recent Events:");
     ImGui::Separator();
     
-    ImGui::BeginChild("EventScrollRegion", ImVec2(0, 190), true);
+    // Dynamic scroll region
+    float scrollHeight = bottomHeight - 70;
+    ImGui::BeginChild("EventScrollRegion", ImVec2(0, scrollHeight), true);
 
-    // Show most recent events (last 20 for larger window)
-    int startIdx = events.size() > 20 ? events.size() - 20 : 0;
+    // Show most recent events
+    int maxEvents = static_cast<int>(scrollHeight / 25);  // Estimate events that fit
+    int startIdx = events.size() > maxEvents ? events.size() - maxEvents : 0;
     for (int i = startIdx; i < static_cast<int>(events.size()); ++i) {
         std::string eventText = "• " + events[i].getDescription();
         ImGui::TextWrapped("%s", eventText.c_str());
@@ -262,12 +321,21 @@ void displayEventLog(const std::vector<Event>& events) {
     ImGui::End();
 }
 
-// NEW: Action controls panel - INCREASED SIZE for better readability
+// Action controls panel - OVERLAYS on left column bottom, RESPONSIVE
 void displayActionControls(GameStateStack& history, ActionQueue& actionQueue, 
                            bool& undoRequested, bool& clearHistoryRequested) {
-    ImGui::SetNextWindowPos(ImVec2(10, 440), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(320, 330), ImGuiCond_Once);  // Increased from 280x340
-    ImGui::Begin("Action Controls", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Left column positioning
+    float leftColWidth = windowWidth * 0.25f;
+    float topHeight = windowHeight * 0.61f;
+    float bottomHeight = windowHeight * 0.39f;
+    
+    ImGui::SetNextWindowPos(ImVec2(0, topHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(leftColWidth, bottomHeight), ImGuiCond_Always);
+    ImGui::Begin("Action Controls", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 10));
     
@@ -292,7 +360,7 @@ void displayActionControls(GameStateStack& history, ActionQueue& actionQueue,
     ImGui::Separator();
     ImGui::Spacing();
     
-    // Undo button with keyboard shortcut indicator - LARGER
+    // Undo button with keyboard shortcut indicator
     bool canUndo = !history.isEmpty();
     if (!canUndo) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
@@ -316,15 +384,15 @@ void displayActionControls(GameStateStack& history, ActionQueue& actionQueue,
     
     ImGui::Spacing();
     
-    // Last action preview with wrapping
+    // Last action preview
     ImGui::Separator();
     if (!actionQueue.isEmpty()) {
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Last Action Taken:");
-        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 300);
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Last Action:");
+        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + leftColWidth - 30);
         ImGui::TextWrapped("\"%s\"", actionQueue.peek().c_str());
         ImGui::PopTextWrapPos();
     } else {
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No recent actions recorded");
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No recent actions");
     }
     
     ImGui::Spacing();
@@ -332,32 +400,44 @@ void displayActionControls(GameStateStack& history, ActionQueue& actionQueue,
     ImGui::Spacing();
     
     // Clear history button
-    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "⚠ Advanced Options:");
-    if (ImGui::Button("Clear All History", ImVec2(-1, 35))) {
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "⚠ Advanced:");
+    if (ImGui::Button("Clear All History", ImVec2(-1, 30))) {
         clearHistoryRequested = true;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Remove all saved states\nWARNING: This cannot be undone!");
+        ImGui::SetTooltip("Remove all saved states\nWARNING: Cannot be undone!");
     }
     
     ImGui::PopStyleVar();
     ImGui::End();
 }
 
-// Welcome screen - LARGER for better presentation
+// Welcome screen - CENTERED, RESPONSIVE
 bool displayWelcomeScreen(bool& startGame) {
-    ImGui::SetNextWindowPos(ImVec2(340, 200), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(600, 350), ImGuiCond_Once);  // Increased from 480x260
-    ImGui::Begin("Welcome to Wolf Pack Survival", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Center the welcome screen (60% width, 70% height)
+    float welcomeWidth = windowWidth * 0.6f;
+    float welcomeHeight = windowHeight * 0.7f;
+    float welcomeX = (windowWidth - welcomeWidth) * 0.5f;
+    float welcomeY = (windowHeight - welcomeHeight) * 0.5f;
+    
+    ImGui::SetNextWindowPos(ImVec2(welcomeX, welcomeY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(welcomeWidth, welcomeHeight), ImGuiCond_Always);
+    ImGui::Begin("Welcome to Wolf Pack Survival", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 10));
     
     ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + welcomeWidth - 40);
     ImGui::TextWrapped(
         "You are a lone wolf separated from your pack in the harsh Alaskan wilderness. "
         "Your survival depends on the choices you make. Hunt for food, navigate dangerous terrain, "
         "and interact with other wolves as you fight to stay alive through the brutal winter."
     );
+    ImGui::PopTextWrapPos();
     ImGui::Spacing();
     ImGui::Spacing();
     ImGui::Separator();
@@ -392,11 +472,21 @@ bool displayWelcomeScreen(bool& startGame) {
     return startGame;
 }
 
-// Ending screen - LARGER for full ending text
+// Ending screen - CENTERED, RESPONSIVE
 void displayEndingGUI(const std::string& text) {
-    ImGui::SetNextWindowPos(ImVec2(340, 200), ImGuiCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(600, 300), ImGuiCond_Once);  // Increased from 480x220
-    ImGui::Begin("Game Over", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    ImGuiIO& io = ImGui::GetIO();
+    float windowWidth = io.DisplaySize.x;
+    float windowHeight = io.DisplaySize.y;
+    
+    // Center the ending screen (60% width, 55% height)
+    float endingWidth = windowWidth * 0.6f;
+    float endingHeight = windowHeight * 0.55f;
+    float endingX = (windowWidth - endingWidth) * 0.5f;
+    float endingY = (windowHeight - endingHeight) * 0.5f;
+    
+    ImGui::SetNextWindowPos(ImVec2(endingX, endingY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(endingWidth, endingHeight), ImGuiCond_Always);
+    ImGui::Begin("Game Over", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 12));
     
@@ -406,7 +496,7 @@ void displayEndingGUI(const std::string& text) {
     ImGui::Separator();
     ImGui::Spacing();
     
-    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 570);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + endingWidth - 40);
     ImGui::TextWrapped("%s", text.c_str());
     ImGui::PopTextWrapPos();
     

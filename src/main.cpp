@@ -16,10 +16,11 @@
 
 // ============================================================
 // UPDATED:
-// - Added visual feedback for undo actions
+// - Added ESC key handling to properly close the window
+// - Visual feedback for undo actions
 // - Integrated UI undo controls with backend
-// - Added confirmation messages for all actions
-// - Added proper state restoration with UI sync
+// - Confirmation messages for all actions
+// - Proper state restoration with UI sync
 // ============================================================
 
 // Notification system for user feedback
@@ -112,6 +113,7 @@ void generateRandomEvent(EventManager& eventManager, Inventory* inventory) {
 
 // ---------------- Game Loop ----------------
 void gameLoop(
+    GLFWwindow* window,
     DecisionTree& tree,
     EventManager& em,
     GameState& gameState,
@@ -123,6 +125,9 @@ void gameLoop(
     int selectedChoice = -1;
     const Node* node = tree.getCurrentNode();
     if (!node) return;
+
+    // Check for ESC key to close the game
+    UIManager::checkEscapeKey(window);
 
     // Render UI using UIManager with undo controls
     bool undoRequested = false;
@@ -285,13 +290,16 @@ int main() {
         ImGui::NewFrame();
 
         if (!startGame) {
+            // Check for ESC on welcome screen too
+            UIManager::checkEscapeKey(window);
+            
             UIManager::displayWelcomeScreen(startGame);
             if (startGame) {
                 addNotification("Game started! Good luck, lone wolf.", 
                               ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
             }
         } else {
-            gameLoop(tree, em, gameState, history, actionQueue, eventLog, deltaTime);
+            gameLoop(window, tree, em, gameState, history, actionQueue, eventLog, deltaTime);
         }
 
         ImGui::Render();
@@ -308,6 +316,7 @@ int main() {
     std::cout << "Days Survived: " << gameState.day << std::endl;
     std::cout << "Final XP: " << gameState.stats.getXP() << std::endl;
     std::cout << "Undo History Size: " << history.getSize() << std::endl;
+    std::cout << "Game closed via ESC key." << std::endl;
     std::cout << "=======================" << std::endl;
 
     ImGui_ImplOpenGL3_Shutdown();
