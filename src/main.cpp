@@ -15,15 +15,58 @@
 #include "imgui_impl_opengl3.h"
 
 // ============================================================
-// CHANGES:
-// - Integrated ActionQueue with Command pattern for undo
-// - Implemented stat polling via EventManager
-// - Applied choice-based stat effects
-// - Added undo functionality (U key)
-// - Integrated Algorithm 2 (event update with threshold)
-// - Used GameState struct as centralized state holder
-// - Implemented validateStats() calls
+// UPDATED:
+// - Added visual feedback for undo actions
+// - Integrated UI undo controls with backend
+// - Added confirmation messages for all actions
+// - Added proper state restoration with UI sync
 // ============================================================
+
+// Notification system for user feedback
+struct Notification {
+    std::string message;
+    float timeRemaining;
+    ImVec4 color;
+    
+    Notification(const std::string& msg, float duration = 3.0f, ImVec4 col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f))
+        : message(msg), timeRemaining(duration), color(col) {}
+};
+
+std::vector<Notification> notifications;
+
+void addNotification(const std::string& message, ImVec4 color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f)) {
+    notifications.push_back(Notification(message, 3.0f, color));
+}
+
+void updateAndRenderNotifications(float deltaTime) {
+    ImGui::SetNextWindowPos(ImVec2(400, 10), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(480, 100), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+    
+    if (!notifications.empty()) {
+        ImGui::Begin("##Notifications", nullptr, 
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+        
+        for (auto it = notifications.begin(); it != notifications.end();) {
+            it->timeRemaining -= deltaTime;
+            
+            if (it->timeRemaining <= 0) {
+                it = notifications.erase(it);
+            } else {
+                float alpha = std::min(1.0f, it->timeRemaining);
+                ImVec4 color = it->color;
+                color.w = alpha;
+                ImGui::TextColored(color, "%s", it->message.c_str());
+                ++it;
+            }
+        }
+        
+        ImGui::End();
+    }
+    
+    ImGui::PopStyleVar();
+}
 
 // ---------------- Initialize Events ----------------
 void initializeEvents(EventManager& eventManager) {
@@ -50,16 +93,20 @@ void generateRandomEvent(EventManager& eventManager, Inventory* inventory) {
         eventManager.registerEvent(100, "You found some winter berries hidden under snow!", Priority::LOW, StatEffect(0, -10, 0, 0));
         eventManager.triggerEvent(100);
         inventory->addItem("Winter Berries", "FOOD", 10, 1);
+        addNotification("Found: Winter Berries!", ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
     }
     else if (roll <= 25 && !inventory->isFull()) {
         inventory->addItem("Healing Herbs", "HERB", 20, 1);
+        addNotification("Found: Healing Herbs!", ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
     }
     else if (roll <= 35) {
         eventManager.registerEvent(101, "A harsh wind chills you to the bone.", Priority::MEDIUM, StatEffect(0, 5, -15, 0));
         eventManager.triggerEvent(101);
+        addNotification("A harsh wind strikes!", ImVec4(1.0f, 0.5f, 0.5f, 1.0f));
     }
     else if (roll <= 40 && !inventory->isFull()) {
         inventory->addItem("Dried Meat", "FOOD", 25, 1);
+        addNotification("Found: Dried Meat!", ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
     }
 }
 
@@ -70,18 +117,49 @@ void gameLoop(
     GameState& gameState,
     GameStateStack& stateHistory,
     ActionQueue& actionQueue,
-    std::vector<Event>& eventLog
+    std::vector<Event>& eventLog,
+    float deltaTime
 ) {
     int selectedChoice = -1;
     const Node* node = tree.getCurrentNode();
     if (!node) return;
 
-    // Render UI using UIManager
-    UIManager::render(gameState, tree, eventLog, selectedChoice);
+    // Render UI using UIManager with undo controls
+    bool undoRequested = false;
+    bool clearHistoryRequested = false;
+    
+    UIManager::render(gameState, tree, eventLog, selectedChoice, stateHistory, actionQueue);
+    
+    // Handle undo controls from UI
+    UIManager::displayActionControls(stateHistory, actionQueue, undoRequested, clearHistoryRequested);
+    
+    // Handle undo request (from button or U key)
+    if (undoRequested || ImGui::IsKeyPressed(ImGuiKey_U)) {
+        GameState previousState;
+        if (stateHistory.undo(previousState)) {
+            // Restore complete game state
+            gameState = previousState;
+            tree.setCurrentNode(gameState.currentNodeId);
+            
+            addNotification("⟲ Restored previous state", ImVec4(0.5f, 0.5f, 1.0f, 1.0f));
+            std::cout << "UNDO: Restored to Node " << gameState.currentNodeId 
+                      << " (Day " << gameState.day << ")" << std::endl;
+        } else {
+            addNotification("Cannot undo - no history!", ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+        }
+    }
+    
+    // Handle clear history request
+    if (clearHistoryRequested) {
+        stateHistory.clear();
+        actionQueue.clear();
+        addNotification("History cleared!", ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+        std::cout << "Cleared all undo history" << std::endl;
+    }
 
     // Handle choice selection
     if (selectedChoice != -1) {
-        // Save current state for undo
+        // Save current state for undo BEFORE making changes
         stateHistory.push(node->getId(), gameState.stats, gameState.inventory, gameState.day, gameState.packSize);
         
         // Get choice with effects
@@ -98,6 +176,10 @@ void gameLoop(
             // Navigate to next node
             tree.makeChoice(selectedChoice);
             gameState.currentNodeId = tree.getCurrentNode()->getId();
+            
+            // Visual feedback
+            addNotification("Choice made: " + choice.text.substr(0, 40) + "...", 
+                          ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
             
             // Advance day and apply passive effects
             gameState.day++;
@@ -122,6 +204,9 @@ void gameLoop(
             
             // Poll stats for critical events (Algorithm 2, Ch 5.2)
             em.pollStats(&gameState.stats);
+            
+            std::cout << "DAY " << gameState.day << ": Moved to Node " 
+                      << gameState.currentNodeId << std::endl;
         }
     }
     
@@ -130,17 +215,8 @@ void gameLoop(
         em.update(&gameState.stats, [&eventLog](const std::string& msg) {
             Event notification(999, msg, Priority::HIGH, StatEffect());
             eventLog.push_back(notification);
+            addNotification(msg, ImVec4(1.0f, 0.8f, 0.0f, 1.0f));
         });
-    }
-    
-    // Check for undo input (U key)
-    if (ImGui::IsKeyPressed(ImGuiKey_U)) {
-        GameState previousState;
-        if (stateHistory.undo(previousState)) {
-            gameState = previousState;
-            tree.setCurrentNode(gameState.currentNodeId);
-            std::cout << "Undo: Restored previous state" << std::endl;
-        }
     }
     
     // Check for ending
@@ -150,6 +226,9 @@ void gameLoop(
             "You have perished in the wilderness...";
         UIManager::displayEndingGUI(endMessage);
     }
+    
+    // Update and render notifications
+    updateAndRenderNotifications(deltaTime);
 }
 
 // ---------------- Main ----------------
@@ -182,11 +261,24 @@ int main() {
     std::vector<Event> eventLog;
 
     bool startGame = false;
+    
+    // Delta time tracking
+    float lastFrameTime = static_cast<float>(glfwGetTime());
 
     tree.loadNodes();
     initializeEvents(em);
 
+    std::cout << "=== Wolf Pack Survival ===" << std::endl;
+    std::cout << "Press U to undo your last choice" << std::endl;
+    std::cout << "Press ESC to quit" << std::endl;
+    std::cout << "=========================" << std::endl;
+
     while (!glfwWindowShouldClose(window)) {
+        // Calculate delta time
+        float currentFrameTime = static_cast<float>(glfwGetTime());
+        float deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+        
         glfwPollEvents();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -194,8 +286,12 @@ int main() {
 
         if (!startGame) {
             UIManager::displayWelcomeScreen(startGame);
+            if (startGame) {
+                addNotification("Game started! Good luck, lone wolf.", 
+                              ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
+            }
         } else {
-            gameLoop(tree, em, gameState, history, actionQueue, eventLog);
+            gameLoop(tree, em, gameState, history, actionQueue, eventLog, deltaTime);
         }
 
         ImGui::Render();
@@ -207,6 +303,12 @@ int main() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
     }
+
+    std::cout << "\n=== Game Statistics ===" << std::endl;
+    std::cout << "Days Survived: " << gameState.day << std::endl;
+    std::cout << "Final XP: " << gameState.stats.getXP() << std::endl;
+    std::cout << "Undo History Size: " << history.getSize() << std::endl;
+    std::cout << "=======================" << std::endl;
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
